@@ -1,35 +1,15 @@
-# Streamlit web app
 streamlit==1.38.0
-
-# OpenAI API
 openai==0.28.0
-
-# Sentence Embeddings
 sentence-transformers==2.2.2
 huggingface-hub==0.13.4
-
-# Data processing
 pandas
 numpy
 scikit-learn
-
-# FAISS for similarity search
 faiss-cpu
-
-# MongoDB
-pymongo
-certifi  # Added to fix SSL handshake errors on Azure
-
-# HTTP requests
+pymongo>=4.3
 requests
-
-# PyTorch for embeddings
 torch
-
-# Transformers & tokenizers
 transformers==4.25.1
 tokenizers==0.13.3
-
-# Misc
 sentencepiece
 tqdm
