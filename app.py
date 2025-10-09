@@ -23,14 +23,14 @@ mongo_conn_str = os.getenv("MONGO_URI")
 # --- Validate Environment Variables
 # -------------------------------
 missing_keys = []
-for key, value in {
+for key, val in {
     "OPENAI_API_KEY": openai.api_key,
     "TWELVEDATA_API_KEY": twelvedata_api_key,
     "NEWS_API_KEY": news_api_key,
     "ALPHA_VANTAGE_API_KEY": alpha_vantage_api_key,
     "MONGO_URI": mongo_conn_str
 }.items():
-    if not value:
+    if not val:
         missing_keys.append(key)
 
 if missing_keys:
@@ -38,26 +38,28 @@ if missing_keys:
     st.stop()
 
 # -------------------------------
-# --- MongoDB Connection
+# --- MongoDB Connection (Azure Compatible)
 # -------------------------------
 try:
-    client = MongoClient(mongo_conn_str)
+    client = MongoClient(
+        mongo_conn_str,
+        tls=True,
+        tlsAllowInvalidCertificates=False,
+        serverSelectionTimeoutMS=30000,
+        connectTimeoutMS=30000
+    )
     client.admin.command('ping')
     db = client["stock_db"]
     collection = db["stock_symbols"]
-    st.info("✅ Connected to MongoDB Atlas")
+    st.success("✅ Connected to MongoDB Atlas")
 except Exception as e:
     st.error(f"❌ MongoDB connection failed: {e}")
     st.stop()
 
 # -------------------------------
-# --- Preload Embedding Model
+# --- Embedding Model
 # -------------------------------
-cache_dir = "/home/site/wwwroot/.cache"
-os.makedirs(cache_dir, exist_ok=True)
-
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=cache_dir)
-st.info("✅ SentenceTransformer model preloaded")
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 # -------------------------------
 # --- MongoDB Utility Functions
@@ -109,11 +111,9 @@ def get_alpha_vantage_data(symbol):
     data = r.json()
     if "Time Series (Daily)" not in data:
         raise ValueError(f"Alpha Vantage error: {data}")
+
     df = pd.DataFrame.from_dict(data["Time Series (Daily)"], orient='index')
-    df = df.rename(columns={
-        '1. open': 'open', '2. high': 'high', '3. low': 'low',
-        '4. close': 'close', '5. volume': 'volume'
-    })
+    df = df.rename(columns={'1. open': 'open', '2. high': 'high', '3. low': 'low', '4. close': 'close', '5. volume': 'volume'})
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
     return df.last("6M")[['close']].astype(float)
@@ -146,77 +146,4 @@ def get_twelve_data(symbol, exchange):
 # --- Generate Insight (RAG + LLM)
 # -------------------------------
 def get_stock_insight(query, corpus, index, symbol, hist_df):
-    query_embedding = embedding_model.encode([query])
-    query_embedding = normalize(query_embedding)
-    D, I = index.search(query_embedding, k=3)
-    context = "\n".join([corpus[i] for i in I[0]])
-
-    latest_price = hist_df["close"].iloc[-1]
-    past_price = hist_df["close"].iloc[0]
-    change_pct = ((latest_price - past_price) / past_price) * 100
-
-    trend_context = (
-        f"The current stock price of {symbol} is {latest_price:.2f}. "
-        f"It changed from {past_price:.2f} over the past 6 months, a {change_pct:.2f}% move."
-    )
-
-    prompt = f"""
-    You are a financial advisor. Based on the stock trend and recent news, provide an investment insight and recommendation.
-
-    Stock Trend:
-    {trend_context}
-
-    News:
-    {context}
-
-    Question:
-    {query}
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a helpful financial advisor."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4
-    )
-    return response['choices'][0]['message']['content']
-
-# -------------------------------
-# --- Streamlit UI
-# -------------------------------
-st.set_page_config(page_title="Stock Market Consultant", layout="centered")
-st.title("📈 STAT-TECH-AI Powered Stock Market Consultant")
-
-query = st.text_input("🔍 Ask a question about a company (e.g., Infosys 6-month trend)")
-
-if query:
-    with st.spinner("Fetching insights..."):
-        company_name = match_company_in_db(query)
-        if company_name:
-            symbol, exchange = fetch_ticker_from_db(company_name)
-            if symbol and exchange:
-                st.write(f"📌 Company: **{company_name.title()}**, Symbol: **{symbol}**, Exchange: **{exchange}**")
-
-                news = fetch_live_news(company_name)
-                if news:
-                    index, corpus = build_faiss_index(news)
-                    try:
-                        if exchange in ["NSE", "BSE"]:
-                            hist_df = get_alpha_vantage_data(symbol)
-                        else:
-                            hist_df = get_twelve_data(symbol, exchange)
-
-                        st.line_chart(hist_df, use_container_width=True)
-                        insight = get_stock_insight(query, corpus, index, symbol, hist_df)
-                        st.success("💡 Investment Insight:")
-                        st.write(insight)
-                    except Exception as e:
-                        st.error(f"❌ Historical data error: {e}")
-                else:
-                    st.warning("⚠️ No recent news found for this company.")
-            else:
-                st.error(f"❌ Company '{company_name}' not found in MongoDB.")
-        else:
-            st.error("❌ No matching company found in MongoDB. Please check the name or add it.")
+    query_embedding = embedding_model.en
