@@ -18,6 +18,7 @@ faiss-cpu
 
 # MongoDB
 pymongo
+certifi  # Added to fix SSL handshake errors on Azure
 
 # HTTP requests
 requests
