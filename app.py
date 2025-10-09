@@ -23,11 +23,15 @@ mongo_conn_str = os.getenv("MONGO_URI")
 # --- Validate Environment Variables
 # -------------------------------
 missing_keys = []
-if not openai.api_key: missing_keys.append("OPENAI_API_KEY")
-if not twelvedata_api_key: missing_keys.append("TWELVEDATA_API_KEY")
-if not news_api_key: missing_keys.append("NEWS_API_KEY")
-if not alpha_vantage_api_key: missing_keys.append("ALPHA_VANTAGE_API_KEY")
-if not mongo_conn_str: missing_keys.append("MONGO_URI")
+for key, value in {
+    "OPENAI_API_KEY": openai.api_key,
+    "TWELVEDATA_API_KEY": twelvedata_api_key,
+    "NEWS_API_KEY": news_api_key,
+    "ALPHA_VANTAGE_API_KEY": alpha_vantage_api_key,
+    "MONGO_URI": mongo_conn_str
+}.items():
+    if not value:
+        missing_keys.append(key)
 
 if missing_keys:
     st.error(f"❌ Missing environment variables: {', '.join(missing_keys)}")
@@ -47,9 +51,13 @@ except Exception as e:
     st.stop()
 
 # -------------------------------
-# --- Embedding Model
+# --- Preload Embedding Model
 # -------------------------------
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+cache_dir = "/home/site/wwwroot/.cache"
+os.makedirs(cache_dir, exist_ok=True)
+
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=cache_dir)
+st.info("✅ SentenceTransformer model preloaded")
 
 # -------------------------------
 # --- MongoDB Utility Functions
@@ -99,10 +107,8 @@ def get_alpha_vantage_data(symbol):
     }
     r = requests.get(url, params=params)
     data = r.json()
-
     if "Time Series (Daily)" not in data:
         raise ValueError(f"Alpha Vantage error: {data}")
-
     df = pd.DataFrame.from_dict(data["Time Series (Daily)"], orient='index')
     df = df.rename(columns={
         '1. open': 'open', '2. high': 'high', '3. low': 'low',
@@ -126,13 +132,10 @@ def get_twelve_data(symbol, exchange):
     }
     if exchange:
         params["exchange"] = exchange
-
     response = requests.get(url, params=params)
     data = response.json()
-
     if "values" not in data:
         raise ValueError(f"Twelve Data error: {data}")
-
     df = pd.DataFrame(data["values"])
     df["datetime"] = pd.to_datetime(df["datetime"])
     df.set_index("datetime", inplace=True)
